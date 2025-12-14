@@ -24,4 +24,5 @@ def get_db():
     try:
         yield db
     finally:
-        db.close() nmlkjlklkk
+        db.close()
+#test test
