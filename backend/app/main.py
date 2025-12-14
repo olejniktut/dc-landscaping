@@ -12,7 +12,7 @@ from app.routers import (
 )
 
 # Create database tables
-Base.metadata.create_all(bind=engine)
+# Tables will be created on first request
 
 # Create FastAPI app
 app = FastAPI(
