@@ -1,0 +1,52 @@
+version: '3.8'
+
+services:
+  db:
+    image: mysql:8.0
+    container_name: dc_landscaping_db
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: rootpassword
+      MYSQL_DATABASE: dclandscaping
+      MYSQL_USER: dcland
+      MYSQL_PASSWORD: dcland123
+      TZ: America/Winnipeg
+    ports:
+      - "3307:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+    command: --default-authentication-plugin=mysql_native_password
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: dc_landscaping_backend
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: mysql+pymysql://dcland:dcland123@db:3306/dclandscaping
+      SECRET_KEY: dc-landscaping-secret-key-change-in-production
+      TZ: America/Winnipeg
+    ports:
+      - "8000:8000"
+    depends_on:
+      - db
+    volumes:
+      - ./backend:/app
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: dc_landscaping_frontend
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    depends_on:
+      - backend
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+
+volumes:
+  mysql_data:
