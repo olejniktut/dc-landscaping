@@ -83,13 +83,14 @@ def workers():
     db = SessionLocal()
     if request.method == 'GET':
         result = [{"id": w.id, "name": w.name, "phone": w.phone, "hourly_rate": str(w.hourly_rate), "is_active": w.is_active} for w in db.query(Worker).all()]
-    else:
-        data = request.json
-        w = Worker(name=data['name'], phone=data.get('phone'), hourly_rate=data.get('hourly_rate', 20), is_active=True)
-        db.add(w)
-        db.commit()
-        db.refresh(w)
-        result = {"id": w.id, "name": w.name}
+        db.close()
+        return jsonify(result)
+    data = request.json
+    w = Worker(name=data['name'], phone=data.get('phone'), hourly_rate=data.get('hourly_rate', 20), is_active=True)
+    db.add(w)
+    db.commit()
+    db.refresh(w)
+    result = {"id": w.id, "name": w.name}
     db.close()
     return jsonify(result)
 
@@ -103,13 +104,13 @@ def worker_detail(wid):
             setattr(w, k, v)
         db.commit()
         result = {"id": w.id, "name": w.name}
-    else:
-        if w:
-            db.delete(w)
-            db.commit()
-        result = {"ok": True}
+        db.close()
+        return jsonify(result)
+    if w:
+        db.delete(w)
+        db.commit()
     db.close()
-    return jsonify(result)
+    return jsonify({"ok": True})
 
 @app.route('/api/properties', methods=['GET', 'POST', 'OPTIONS'])
 @login_required
@@ -117,13 +118,14 @@ def properties():
     db = SessionLocal()
     if request.method == 'GET':
         result = [{"id": p.id, "name": p.name, "address": p.address, "is_spring_cleanup": p.is_spring_cleanup, "is_fall_cleanup": p.is_fall_cleanup, "is_active": p.is_active} for p in db.query(Property).all()]
-    else:
-        data = request.json
-        p = Property(name=data['name'], address=data.get('address'), is_spring_cleanup=data.get('is_spring_cleanup', False), is_fall_cleanup=data.get('is_fall_cleanup', False), is_active=True)
-        db.add(p)
-        db.commit()
-        db.refresh(p)
-        result = {"id": p.id, "name": p.name}
+        db.close()
+        return jsonify(result)
+    data = request.json
+    p = Property(name=data['name'], address=data.get('address'), is_spring_cleanup=data.get('is_spring_cleanup', False), is_fall_cleanup=data.get('is_fall_cleanup', False), is_active=True)
+    db.add(p)
+    db.commit()
+    db.refresh(p)
+    result = {"id": p.id, "name": p.name}
     db.close()
     return jsonify(result)
 
@@ -137,13 +139,13 @@ def property_detail(pid):
             setattr(p, k, v)
         db.commit()
         result = {"id": p.id}
-    else:
-        if p:
-            db.delete(p)
-            db.commit()
-        result = {"ok": True}
+        db.close()
+        return jsonify(result)
+    if p:
+        db.delete(p)
+        db.commit()
     db.close()
-    return jsonify(result)
+    return jsonify({"ok": True})
 
 @app.route('/api/time-records/today', methods=['GET', 'OPTIONS'])
 @login_required
@@ -153,7 +155,8 @@ def today_records():
     result = []
     for r in records:
         item = {"id": r.id, "property_id": r.property_id, "worker_id": r.worker_id}
-        item["start_time"] = r.start_time.isoformat() if r.start_time else None
+        if r.start_time:
+            item["start_time"] = r.start_time.isoformat()
         if r.property:
             item["property"] = {"id": r.property.id, "name": r.property.name}
         if r.worker:
@@ -182,11 +185,12 @@ def stop_timer():
     data = request.json
     db = SessionLocal()
     r = db.query(TimeRecord).filter(TimeRecord.id == data['record_id']).first()
-    if r:
+    if r and r.start_time:
         r.end_time = datetime.now()
         delta = r.end_time - r.start_time
         r.hours_worked = round(delta.total_seconds() / 3600, 2)
-        r.total_cost = float(r.hours_worked) * float(r.hourly_rate) if r.hourly_rate else 0
+        if r.hourly_rate:
+            r.total_cost = float(r.hours_worked) * float(r.hourly_rate)
         db.commit()
     db.close()
     return jsonify({"ok": True})
@@ -199,23 +203,26 @@ def time_records():
         result = []
         for r in db.query(TimeRecord).all():
             item = {"id": r.id, "property_id": r.property_id, "worker_id": r.worker_id}
-            item["date"] = r.date.isoformat() if r.date else None
-            item["hours_worked"] = str(r.hours_worked) if r.hours_worked else None
+            if r.date:
+                item["date"] = r.date.isoformat()
+            if r.hours_worked:
+                item["hours_worked"] = str(r.hours_worked)
             if r.property:
                 item["property"] = {"id": r.property.id, "name": r.property.name}
             if r.worker:
                 item["worker"] = {"id": r.worker.id, "name": r.worker.name}
             result.append(item)
-    else:
-        data = request.json
-        wid = data.get('worker_id')
-        w = db.query(Worker).filter(Worker.id == wid).first() if wid else None
-        r = TimeRecord(property_id=data.get('property_id'), worker_id=wid, date=date.today(), hours_worked=data.get('hours_worked'), hourly_rate=w.hourly_rate if w else 20)
-        if r.hours_worked and r.hourly_rate:
-            r.total_cost = float(r.hours_worked) * float(r.hourly_rate)
-        db.add(r)
-        db.commit()
-        result = {"id": r.id}
+        db.close()
+        return jsonify(result)
+    data = request.json
+    wid = data.get('worker_id')
+    w = db.query(Worker).filter(Worker.id == wid).first() if wid else None
+    r = TimeRecord(property_id=data.get('property_id'), worker_id=wid, date=date.today(), hours_worked=data.get('hours_worked'), hourly_rate=w.hourly_rate if w else 20)
+    if r.hours_worked and r.hourly_rate:
+        r.total_cost = float(r.hours_worked) * float(r.hourly_rate)
+    db.add(r)
+    db.commit()
+    result = {"id": r.id}
     db.close()
     return jsonify(result)
 
