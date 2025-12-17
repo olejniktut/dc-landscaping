@@ -1,7 +1,7 @@
 import axios from 'axios'
 
 const api = axios.create({
-  baseURL: import.meta.env.VITE_API_URL || 'https://dragon56test.pythonanywhere.com/api',
+  baseURL: 'https://dragon56test.pythonanywhere.com/api',
 })
 
 api.interceptors.request.use((config) => {
@@ -49,4 +49,3 @@ export const reportsApi = {
 }
 
 export default api
-EOF
