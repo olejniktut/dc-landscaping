@@ -1,5 +1,3 @@
-
-
 from flask import Flask, request, jsonify
 from app.database import SessionLocal, Base, engine
 from app.models import User, Worker, Property, TimeRecord
@@ -152,7 +150,15 @@ def property_detail(pid):
 def today_records():
     db = SessionLocal()
     records = db.query(TimeRecord).filter(TimeRecord.date == date.today()).all()
-    result = [{"id": r.id, "property_id": r.property_id, "worker_id": r.worker_id, "start_time": r.start_time.isoformat() if r.start_time else None, "property": {"id": r.property.id, "name": r.property.name} if r.property else None, "worker": {"id": r.worker.id, "name": r.worker.name} if r.worker else None} for r in records]
+    result = []
+    for r in records:
+        item = {"id": r.id, "property_id": r.property_id, "worker_id": r.worker_id}
+        item["start_time"] = r.start_time.isoformat() if r.start_time else None
+        if r.property:
+            item["property"] = {"id": r.property.id, "name": r.property.name}
+        if r.worker:
+            item["worker"] = {"id": r.worker.id, "name": r.worker.name}
+        result.append(item)
     db.close()
     return jsonify(result)
 
@@ -190,7 +196,16 @@ def stop_timer():
 def time_records():
     db = SessionLocal()
     if request.method == 'GET':
-        result = [{"id": r.id, "property_id": r.property_id, "worker_id": r.worker_id, "date": r.date.isoformat() if r.date else None, "hours_worked": str(r.hours_worked) if r.hours_worked else None, "property": {"id": r.property.id, "name": r.property.name} if r.property else None, "worker": {"id": r.worker.id, "name": r.worker.name} if r.worker else None} for r in db.query(TimeRecord).all()]
+        result = []
+        for r in db.query(TimeRecord).all():
+            item = {"id": r.id, "property_id": r.property_id, "worker_id": r.worker_id}
+            item["date"] = r.date.isoformat() if r.date else None
+            item["hours_worked"] = str(r.hours_worked) if r.hours_worked else None
+            if r.property:
+                item["property"] = {"id": r.property.id, "name": r.property.name}
+            if r.worker:
+                item["worker"] = {"id": r.worker.id, "name": r.worker.name}
+            result.append(item)
     else:
         data = request.json
         wid = data.get('worker_id')
@@ -222,8 +237,3 @@ def dashboard():
     result = {"total_workers": db.query(Worker).count(), "total_properties": db.query(Property).count(), "total_records": db.query(TimeRecord).count()}
     db.close()
     return jsonify(result)
-'''
-with open('flask_app.py', 'w') as f:
-    f.write(code)
-print("Done!")
-PYEOF
