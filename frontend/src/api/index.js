@@ -14,7 +14,7 @@ api.interceptors.request.use((config) => {
 
 export const authApi = {
   login: (username, password) => api.post('/auth/login', { username, password }),
-  me: () => api.get('/auth/me'),
+  getMe: () => api.get('/auth/me'),
 }
 
 export const workersApi = {
