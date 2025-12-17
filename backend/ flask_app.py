@@ -1,3 +1,5 @@
+
+
 from flask import Flask, request, jsonify
 from app.database import SessionLocal, Base, engine
 from app.models import User, Worker, Property, TimeRecord
@@ -7,9 +9,7 @@ from jose import JWTError, jwt
 from passlib.context import CryptContext
 
 Base.metadata.create_all(bind=engine)
-
 app = Flask(__name__)
-
 SECRET_KEY = "dc-landscaping-secret-key-change-in-production"
 ALGORITHM = "HS256"
 pwd_context = CryptContext(schemes=["sha256_crypt"], deprecated="auto")
@@ -21,13 +21,12 @@ def after_request(response):
     response.headers['Access-Control-Allow-Methods'] = 'GET,PUT,POST,DELETE,OPTIONS'
     return response
 
-def verify_password(plain_password, hashed_password):
-    return pwd_context.verify(plain_password, hashed_password)
+def verify_password(p, h):
+    return pwd_context.verify(p, h)
 
 def create_access_token(data):
     to_encode = data.copy()
-    expire = datetime.utcnow() + timedelta(days=7)
-    to_encode.update({"exp": expire})
+    to_encode.update({"exp": datetime.utcnow() + timedelta(days=7)})
     return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
 
 def decode_token(token):
@@ -40,8 +39,7 @@ def get_current_user():
     auth = request.headers.get('Authorization', '')
     if not auth.startswith('Bearer '):
         return None
-    token = auth.split(' ')[1]
-    payload = decode_token(token)
+    payload = decode_token(auth.split(' ')[1])
     if not payload:
         return None
     db = SessionLocal()
@@ -54,19 +52,14 @@ def login_required(f):
     def decorated(*args, **kwargs):
         if request.method == 'OPTIONS':
             return '', 200
-        user = get_current_user()
-        if not user:
+        if not get_current_user():
             return jsonify({"detail": "Not authenticated"}), 401
         return f(*args, **kwargs)
     return decorated
 
 @app.route('/')
 def root():
-    return jsonify({"status": "ok", "app": "DC Landscaping"})
-
-@app.route('/api/health')
-def health():
-    return jsonify({"status": "healthy"})
+    return jsonify({"status": "ok"})
 
 @app.route('/api/auth/login', methods=['POST', 'OPTIONS'])
 def login():
@@ -78,8 +71,7 @@ def login():
     db.close()
     if not user or not verify_password(data['password'], user.hashed_password):
         return jsonify({"detail": "Invalid credentials"}), 401
-    token = create_access_token({"sub": user.username, "role": user.role.value})
-    return jsonify({"access_token": token, "token_type": "bearer"})
+    return jsonify({"access_token": create_access_token({"sub": user.username, "role": user.role.value}), "token_type": "bearer"})
 
 @app.route('/api/auth/me', methods=['GET', 'OPTIONS'])
 @login_required
@@ -90,106 +82,77 @@ def get_me():
 @app.route('/api/workers', methods=['GET', 'POST', 'OPTIONS'])
 @login_required
 def workers():
-    if request.method == 'GET':
-        db = SessionLocal()
-        workers = db.query(Worker).all()
-        result = [{"id": w.id, "name": w.name, "phone": w.phone, "hourly_rate": str(w.hourly_rate), "is_active": w.is_active} for w in workers]
-        db.close()
-        return jsonify(result)
-    elif request.method == 'POST':
-        data = request.json
-        db = SessionLocal()
-        worker = Worker(name=data['name'], phone=data.get('phone'), hourly_rate=data.get('hourly_rate', 20), is_active=data.get('is_active', True))
-        db.add(worker)
-        db.commit()
-        db.refresh(worker)
-        result = {"id": worker.id, "name": worker.name, "phone": worker.phone, "hourly_rate": str(worker.hourly_rate), "is_active": worker.is_active}
-        db.close()
-        return jsonify(result)
-
-@app.route('/api/workers/<int:worker_id>', methods=['PUT', 'DELETE', 'OPTIONS'])
-@login_required
-def worker_detail(worker_id):
     db = SessionLocal()
-    worker = db.query(Worker).filter(Worker.id == worker_id).first()
-    if request.method == 'PUT':
+    if request.method == 'GET':
+        result = [{"id": w.id, "name": w.name, "phone": w.phone, "hourly_rate": str(w.hourly_rate), "is_active": w.is_active} for w in db.query(Worker).all()]
+    else:
         data = request.json
-        if not worker:
-            db.close()
-            return jsonify({"detail": "Not found"}), 404
-        for key, value in data.items():
-            setattr(worker, key, value)
+        w = Worker(name=data['name'], phone=data.get('phone'), hourly_rate=data.get('hourly_rate', 20), is_active=True)
+        db.add(w)
         db.commit()
-        result = {"id": worker.id, "name": worker.name, "phone": worker.phone, "hourly_rate": str(worker.hourly_rate), "is_active": worker.is_active}
-        db.close()
-        return jsonify(result)
-    elif request.method == 'DELETE':
-        if worker:
-            db.delete(worker)
+        db.refresh(w)
+        result = {"id": w.id, "name": w.name}
+    db.close()
+    return jsonify(result)
+
+@app.route('/api/workers/<int:wid>', methods=['PUT', 'DELETE', 'OPTIONS'])
+@login_required
+def worker_detail(wid):
+    db = SessionLocal()
+    w = db.query(Worker).filter(Worker.id == wid).first()
+    if request.method == 'PUT':
+        for k, v in request.json.items():
+            setattr(w, k, v)
+        db.commit()
+        result = {"id": w.id, "name": w.name}
+    else:
+        if w:
+            db.delete(w)
             db.commit()
-        db.close()
-        return jsonify({"ok": True})
+        result = {"ok": True}
+    db.close()
+    return jsonify(result)
 
 @app.route('/api/properties', methods=['GET', 'POST', 'OPTIONS'])
 @login_required
 def properties():
-    if request.method == 'GET':
-        db = SessionLocal()
-        props = db.query(Property).all()
-        result = [{"id": p.id, "name": p.name, "address": p.address, "is_spring_cleanup": p.is_spring_cleanup, "is_fall_cleanup": p.is_fall_cleanup, "is_active": p.is_active} for p in props]
-        db.close()
-        return jsonify(result)
-    elif request.method == 'POST':
-        data = request.json
-        db = SessionLocal()
-        prop = Property(name=data['name'], address=data.get('address'), is_spring_cleanup=data.get('is_spring_cleanup', False), is_fall_cleanup=data.get('is_fall_cleanup', False), is_active=data.get('is_active', True))
-        db.add(prop)
-        db.commit()
-        db.refresh(prop)
-        result = {"id": prop.id, "name": prop.name, "address": prop.address, "is_spring_cleanup": prop.is_spring_cleanup, "is_fall_cleanup": prop.is_fall_cleanup, "is_active": prop.is_active}
-        db.close()
-        return jsonify(result)
-
-@app.route('/api/properties/<int:property_id>', methods=['PUT', 'DELETE', 'OPTIONS'])
-@login_required
-def property_detail(property_id):
     db = SessionLocal()
-    prop = db.query(Property).filter(Property.id == property_id).first()
-    if request.method == 'PUT':
+    if request.method == 'GET':
+        result = [{"id": p.id, "name": p.name, "address": p.address, "is_spring_cleanup": p.is_spring_cleanup, "is_fall_cleanup": p.is_fall_cleanup, "is_active": p.is_active} for p in db.query(Property).all()]
+    else:
         data = request.json
-        if not prop:
-            db.close()
-            return jsonify({"detail": "Not found"}), 404
-        for key, value in data.items():
-            setattr(prop, key, value)
+        p = Property(name=data['name'], address=data.get('address'), is_spring_cleanup=data.get('is_spring_cleanup', False), is_fall_cleanup=data.get('is_fall_cleanup', False), is_active=True)
+        db.add(p)
         db.commit()
-        result = {"id": prop.id, "name": prop.name, "address": prop.address, "is_spring_cleanup": prop.is_spring_cleanup, "is_fall_cleanup": prop.is_fall_cleanup, "is_active": prop.is_active}
-        db.close()
-        return jsonify(result)
-    elif request.method == 'DELETE':
-        if prop:
-            db.delete(prop)
+        db.refresh(p)
+        result = {"id": p.id, "name": p.name}
+    db.close()
+    return jsonify(result)
+
+@app.route('/api/properties/<int:pid>', methods=['PUT', 'DELETE', 'OPTIONS'])
+@login_required
+def property_detail(pid):
+    db = SessionLocal()
+    p = db.query(Property).filter(Property.id == pid).first()
+    if request.method == 'PUT':
+        for k, v in request.json.items():
+            setattr(p, k, v)
+        db.commit()
+        result = {"id": p.id}
+    else:
+        if p:
+            db.delete(p)
             db.commit()
-        db.close()
-        return jsonify({"ok": True})
+        result = {"ok": True}
+    db.close()
+    return jsonify(result)
 
 @app.route('/api/time-records/today', methods=['GET', 'OPTIONS'])
 @login_required
-def get_today_records():
+def today_records():
     db = SessionLocal()
-    today = date.today()
-    records = db.query(TimeRecord).filter(TimeRecord.date == today).all()
-    result = []
-    for r in records:
-        result.append({
-            "id": r.id, "property_id": r.property_id, "worker_id": r.worker_id,
-            "date": r.date.isoformat() if r.date else None,
-            "start_time": r.start_time.isoformat() if r.start_time else None,
-            "end_time": r.end_time.isoformat() if r.end_time else None,
-            "hours_worked": str(r.hours_worked) if r.hours_worked else None,
-            "property": {"id": r.property.id, "name": r.property.name} if r.property else None,
-            "worker": {"id": r.worker.id, "name": r.worker.name} if r.worker else None
-        })
+    records = db.query(TimeRecord).filter(TimeRecord.date == date.today()).all()
+    result = [{"id": r.id, "property_id": r.property_id, "worker_id": r.worker_id, "start_time": r.start_time.isoformat() if r.start_time else None, "property": {"id": r.property.id, "name": r.property.name} if r.property else None, "worker": {"id": r.worker.id, "name": r.worker.name} if r.worker else None} for r in records]
     db.close()
     return jsonify(result)
 
@@ -198,12 +161,12 @@ def get_today_records():
 def start_timer():
     data = request.json
     db = SessionLocal()
-    worker = db.query(Worker).filter(Worker.id == data['worker_id']).first()
-    record = TimeRecord(property_id=data['property_id'], worker_id=data['worker_id'], date=date.today(), start_time=datetime.now(), hourly_rate=worker.hourly_rate if worker else 20)
-    db.add(record)
+    w = db.query(Worker).filter(Worker.id == data['worker_id']).first()
+    r = TimeRecord(property_id=data['property_id'], worker_id=data['worker_id'], date=date.today(), start_time=datetime.now(), hourly_rate=w.hourly_rate if w else 20)
+    db.add(r)
     db.commit()
-    db.refresh(record)
-    result = {"id": record.id, "property_id": record.property_id, "worker_id": record.worker_id, "date": record.date.isoformat(), "start_time": record.start_time.isoformat()}
+    db.refresh(r)
+    result = {"id": r.id, "start_time": r.start_time.isoformat()}
     db.close()
     return jsonify(result)
 
@@ -212,75 +175,55 @@ def start_timer():
 def stop_timer():
     data = request.json
     db = SessionLocal()
-    record = db.query(TimeRecord).filter(TimeRecord.id == data['record_id']).first()
-    if not record:
-        db.close()
-        return jsonify({"detail": "Not found"}), 404
-    record.end_time = datetime.now()
-    if record.start_time:
-        delta = record.end_time - record.start_time
-        record.hours_worked = round(delta.total_seconds() / 3600, 2)
-        if record.hourly_rate:
-            record.total_cost = float(record.hours_worked) * float(record.hourly_rate)
-    db.commit()
-    result = {"id": record.id, "hours_worked": str(record.hours_worked)}
+    r = db.query(TimeRecord).filter(TimeRecord.id == data['record_id']).first()
+    if r:
+        r.end_time = datetime.now()
+        delta = r.end_time - r.start_time
+        r.hours_worked = round(delta.total_seconds() / 3600, 2)
+        r.total_cost = float(r.hours_worked) * float(r.hourly_rate) if r.hourly_rate else 0
+        db.commit()
     db.close()
-    return jsonify(result)
+    return jsonify({"ok": True})
 
 @app.route('/api/time-records', methods=['GET', 'POST', 'OPTIONS'])
 @login_required
 def time_records():
-    if request.method == 'GET':
-        db = SessionLocal()
-        records = db.query(TimeRecord).all()
-        result = []
-        for r in records:
-            result.append({
-                "id": r.id, "property_id": r.property_id, "worker_id": r.worker_id,
-                "date": r.date.isoformat() if r.date else None,
-                "start_time": r.start_time.isoformat() if r.start_time else None,
-                "end_time": r.end_time.isoformat() if r.end_time else None,
-                "hours_worked": str(r.hours_worked) if r.hours_worked else None,
-                "property": {"id": r.property.id, "name": r.property.name} if r.property else None,
-                "worker": {"id": r.worker.id, "name": r.worker.name} if r.worker else None
-            })
-        db.close()
-        return jsonify(result)
-    elif request.method == 'POST':
-        data = request.json
-        db = SessionLocal()
-        worker_id = data.get('worker_id')
-        worker = db.query(Worker).filter(Worker.id == worker_id).first() if worker_id else None
-        record = TimeRecord(property_id=data.get('property_id'), worker_id=worker_id, date=date.today(), hours_worked=data.get('hours_worked'), hourly_rate=worker.hourly_rate if worker else 20, notes=data.get('notes'))
-        if record.hours_worked and record.hourly_rate:
-            record.total_cost = float(record.hours_worked) * float(record.hourly_rate)
-        db.add(record)
-        db.commit()
-        db.refresh(record)
-        result = {"id": record.id}
-        db.close()
-        return jsonify(result)
-
-@app.route('/api/time-records/<int:record_id>', methods=['DELETE', 'OPTIONS'])
-@login_required
-def delete_time_record(record_id):
     db = SessionLocal()
-    record = db.query(TimeRecord).filter(TimeRecord.id == record_id).first()
-    if record:
-        db.delete(record)
+    if request.method == 'GET':
+        result = [{"id": r.id, "property_id": r.property_id, "worker_id": r.worker_id, "date": r.date.isoformat() if r.date else None, "hours_worked": str(r.hours_worked) if r.hours_worked else None, "property": {"id": r.property.id, "name": r.property.name} if r.property else None, "worker": {"id": r.worker.id, "name": r.worker.name} if r.worker else None} for r in db.query(TimeRecord).all()]
+    else:
+        data = request.json
+        wid = data.get('worker_id')
+        w = db.query(Worker).filter(Worker.id == wid).first() if wid else None
+        r = TimeRecord(property_id=data.get('property_id'), worker_id=wid, date=date.today(), hours_worked=data.get('hours_worked'), hourly_rate=w.hourly_rate if w else 20)
+        if r.hours_worked and r.hourly_rate:
+            r.total_cost = float(r.hours_worked) * float(r.hourly_rate)
+        db.add(r)
+        db.commit()
+        result = {"id": r.id}
+    db.close()
+    return jsonify(result)
+
+@app.route('/api/time-records/<int:rid>', methods=['DELETE', 'OPTIONS'])
+@login_required
+def delete_record(rid):
+    db = SessionLocal()
+    r = db.query(TimeRecord).filter(TimeRecord.id == rid).first()
+    if r:
+        db.delete(r)
         db.commit()
     db.close()
     return jsonify({"ok": True})
 
 @app.route('/api/reports/dashboard', methods=['GET', 'OPTIONS'])
 @login_required
-def get_dashboard():
+def dashboard():
     db = SessionLocal()
-    workers = db.query(Worker).filter(Worker.is_active == True).count()
-    properties = db.query(Property).filter(Property.is_active == True).count()
-    records = db.query(TimeRecord).count()
+    result = {"total_workers": db.query(Worker).count(), "total_properties": db.query(Property).count(), "total_records": db.query(TimeRecord).count()}
     db.close()
-    return jsonify({"total_workers": workers, "total_properties": properties, "total_records": records})
-
-if __name__ == '__main__':
-    app.run(debug=True)
+    return jsonify(result)
+'''
+with open('flask_app.py', 'w') as f:
+    f.write(code)
+print("Done!")
+PYEOF
